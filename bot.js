@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, PermissionsBitField } = require('discord.js');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 require('dotenv').config(); // Load environment variables from .env file
@@ -113,6 +113,7 @@ client.on('messageCreate', async message => {
         message.channel.send(`Raid with ID ${raid_id} does not exist.`);
       }
     }
+    await updatePinnedMessage(command_channel); // Ensure the pinned message is updated
   } 
 });
 
@@ -149,7 +150,7 @@ client.on('interactionCreate', async interaction => {
 
     const timeInput = new TextInputBuilder()
       .setCustomId('time')
-      .setLabel('Enter Time (HH:mm or H:mm)')
+      .setLabel('Enter Time (HH:mm AM/PM or H:mm AM/PM)')
       .setStyle(TextInputStyle.Short);
 
     modal.addComponents(new ActionRowBuilder().addComponents(timeInput));
@@ -194,20 +195,20 @@ client.on('interactionCreate', async interaction => {
 
   if (action === 'settime') {
     const time = interaction.fields.getTextInputValue('time');
-    const timeFormats = ['HH:mm', 'H:mm'];
+    const timeFormats = ['h:mm A', 'hh:mm A'];
 
     if (!timeFormats.some(format => moment(time, format, true).isValid())) {
-      await interaction.reply({ content: `Invalid time format. Please enter time as HH:mm or H:mm (e.g., 18:00 or 6:00).`, ephemeral: true });
+      await interaction.reply({ content: `Invalid time format. Please enter time as HH:mm AM/PM or H:mm AM/PM (e.g., 6:00 AM or 06:00 PM).`, ephemeral: true });
       return;
     }
 
     const userTimezone = moment.tz.guess();
     const timeInUserTimezone = moment.tz(time, timeFormats, userTimezone);
-    const convertedTimes = ['America/Chicago', 'America/Denver', 'America/New_York'].map(zone => {
-      return timeInUserTimezone.clone().tz(zone).format('HH:mm z');
+    const convertedTimes = ['America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles'].map(zone => {
+      return timeInUserTimezone.clone().tz(zone).format('h:mm A z');
     }).join(' / ');
 
-    raid.time = `${time} ${userTimezone} (${convertedTimes})`;
+    raid.time = convertedTimes;
   } else if (action === 'setday') {
     const day = interaction.fields.getTextInputValue('date');
     const currentYear = new Date().getFullYear();
@@ -233,14 +234,20 @@ client.on('interactionCreate', async interaction => {
 });
 
 async function send_raid_info(channel, user) {
+  if (!channel.permissionsFor(client.user).has([PermissionsBitField.Flags.ManageMessages, PermissionsBitField.Flags.ReadMessageHistory])) {
+    console.error('Missing permissions to manage messages or read message history.');
+    return;
+  }
+
   await channel.bulkDelete(100, true); // Clear the channel
+
   const sorted_raids = raid_schedule.sort((a, b) => {
     const dateA = new Date(`${a.day} ${a.time}`);
     const dateB = new Date(`${b.day} ${b.time}`);
     return dateA - dateB;
   });
 
-  const raid_icon_url = 'https://yourserver.com/icons/raid.svg'; // Replace with the actual URL to your raid icon
+  const raid_icon = new AttachmentBuilder('./icons/raid.svg');
 
   for (const raid of sorted_raids) {
     const status = raid.participants.length >= raid_size ? '**Raid is full!**' : `**${raid_size - raid.participants.length} more needed!**`;
@@ -257,30 +264,20 @@ async function send_raid_info(channel, user) {
     const extra_info = raid.extra_info ? `ℹ️ **Info:** ${raid.extra_info}` : 'ℹ️ **Info:**';
     const raid_message = new EmbedBuilder()
       .setTitle(`${raid.name}`)
-      .setThumbnail(raid_icon_url)
-      .setDescription(`${time}\n\n${day}\n\n${extra_info}\n\n${status}`)
+      .setDescription(`${time}\n${day}\n${extra_info}\n\n${status}\n\u200B`)
       .setColor(0x00AE86)
+      .setThumbnail('attachment://raid.svg')
       .setFooter({ text: '\u200B'.repeat(100) }); // Add filler text to span width
 
-    const buttons = new ActionRowBuilder();
-
-    if (user && raid.participants.includes(user.id)) {
-      buttons.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`cancel_${raid.id}`)
-          .setLabel('Cancel Sign Up')
-          .setStyle(ButtonStyle.Danger)
-      );
-    } else {
-      buttons.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`signup_${raid.id}`)
-          .setLabel('Sign Up')
-          .setStyle(ButtonStyle.Primary)
-      );
-    }
-
-    buttons.addComponents(
+    const buttons = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`signup_${raid.id}`)
+        .setLabel('Sign Up')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId(`cancel_${raid.id}`)
+        .setLabel('Cancel Sign Up')
+        .setStyle(ButtonStyle.Danger),
       new ButtonBuilder()
         .setCustomId(`settime_${raid.id}`)
         .setLabel('Set Time')
@@ -295,8 +292,7 @@ async function send_raid_info(channel, user) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    await channel.send({ embeds: [raid_message, ...participant_embeds], components: [buttons] });
-    await channel.send({ content: '\u200B' }); // Add extra spacing between raid posts
+    await channel.send({ embeds: [raid_message, ...participant_embeds], components: [buttons], files: [raid_icon] });
   }
 }
 

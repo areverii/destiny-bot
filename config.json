@@ -6,7 +6,7 @@
     "possible_raids": {
         "Vault of Glass": ["vog", "vaultofglass", "vault"],
         "Crota's End": ["ce", "crota", "crotasend", "crota'send", "crotaend"],
-        "King's Fall": ["kf", "kingsfall", "kings", "king'sfall"],
+        "King's Fall": ["kf", "kingsfall", "kings", "king'sfall", "king's fall"],
         "Root of Nightmares": ["ron", "rootofnightmares", "root"],
         "Vow of the Disciple": ["vow", "vowofthedisciple"],
         "Deep Stone Crypt": ["dsc", "deepstonecrypt", "deepstone"],

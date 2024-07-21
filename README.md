@@ -1,6 +1,10 @@
 # destiny-bot
 A bot for my destiny clan server which helps with automatic raid scheduling and sign-ups.
 
+BOT INVITE LINK:
+https://discord.com/oauth2/authorize?client_id=1264631484820754502
+
+
 ## Startup
     
     ```node bot.js```
