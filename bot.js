@@ -1,5 +1,6 @@
 const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const fs = require('fs');
+const { v4: uuidv4 } = require('uuid');
 require('dotenv').config(); // Load environment variables from .env file
 
 // Read and parse the configuration file
@@ -22,8 +23,7 @@ const { prefix, raid_channel_name, command_channel_name, raid_size, possible_rai
 console.log('Raid Channel Name:', raid_channel_name); // Debugging line to check raid_channel_name
 console.log('Command Channel Name:', command_channel_name); // Debugging line to check command_channel_name
 
-let raid_schedule = {};
-let pinnedMessageId = null;
+let raid_schedule = [];
 
 client.on('ready', async () => {
   console.log(`Logged in as ${client.user.tag}!`);
@@ -76,52 +76,59 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'schedule') {
-      if (raid_schedule[raid_name]) {
-        message.channel.send(`Raid "${raid_name}" is already scheduled.`);
-        return;
-      }
-      raid_schedule[raid_name] = {
+      const raid_id = uuidv4();
+      raid_schedule.push({
+        id: raid_id,
+        name: raid_name,
         participants: [],
         time: '',
         day: '',
         extra_info: ''
-      };
-      message.channel.send(`Raid "${raid_name}" scheduled.`);
-      await send_raid_info(raid_channel, raid_name, null);
+      });
+      message.channel.send(`Raid "${raid_name}" scheduled with ID ${raid_id}.`);
+      await send_raid_info(raid_channel, null);
     } else if (command === 'settime') {
+      const raid_id = args.shift();
       const time = args.join(' ');
-      if (raid_schedule[raid_name]) {
-        raid_schedule[raid_name].time = time;
-        message.channel.send(`Time for "${raid_name}" set to ${time}.`);
-        await send_raid_info(raid_channel, raid_name, null);
+      const raid = raid_schedule.find(r => r.id === raid_id);
+      if (raid) {
+        raid.time = time;
+        message.channel.send(`Time for raid ID ${raid_id} set to ${time}.`);
+        await send_raid_info(raid_channel, null);
       } else {
-        message.channel.send(`Raid "${raid_name}" does not exist.`);
+        message.channel.send(`Raid with ID ${raid_id} does not exist.`);
       }
     } else if (command === 'setday') {
+      const raid_id = args.shift();
       const day = args.join(' ');
-      if (raid_schedule[raid_name]) {
-        raid_schedule[raid_name].day = day;
-        message.channel.send(`Day for "${raid_name}" set to ${day}.`);
-        await send_raid_info(raid_channel, raid_name, null);
+      const raid = raid_schedule.find(r => r.id === raid_id);
+      if (raid) {
+        raid.day = day;
+        message.channel.send(`Day for raid ID ${raid_id} set to ${day}.`);
+        await send_raid_info(raid_channel, null);
       } else {
-        message.channel.send(`Raid "${raid_name}" does not exist.`);
+        message.channel.send(`Raid with ID ${raid_id} does not exist.`);
       }
     } else if (command === 'setinfo') {
+      const raid_id = args.shift();
       const extra_info = args.join(' ');
-      if (raid_schedule[raid_name]) {
-        raid_schedule[raid_name].extra_info = extra_info;
-        message.channel.send(`Extra info for "${raid_name}" set to: ${extra_info}.`);
-        await send_raid_info(raid_channel, raid_name, null);
+      const raid = raid_schedule.find(r => r.id === raid_id);
+      if (raid) {
+        raid.extra_info = extra_info;
+        message.channel.send(`Extra info for raid ID ${raid_id} set to: ${extra_info}.`);
+        await send_raid_info(raid_channel, null);
       } else {
-        message.channel.send(`Raid "${raid_name}" does not exist.`);
+        message.channel.send(`Raid with ID ${raid_id} does not exist.`);
       }
     } else if (command === 'cancelraid') {
-      if (raid_schedule[raid_name]) {
-        delete raid_schedule[raid_name];
-        await raid_channel.bulkDelete(100, true); // Clear the raid channel
-        await message.channel.send(`Raid "${raid_name}" has been canceled.`);
+      const raid_id = args.shift();
+      const raid_index = raid_schedule.findIndex(r => r.id === raid_id);
+      if (raid_index !== -1) {
+        raid_schedule.splice(raid_index, 1);
+        await send_raid_info(raid_channel, null);
+        message.channel.send(`Raid with ID ${raid_id} has been canceled.`);
       } else {
-        message.channel.send(`Raid "${raid_name}" does not exist.`);
+        message.channel.send(`Raid with ID ${raid_id} does not exist.`);
       }
     }
   } 
@@ -130,59 +137,68 @@ client.on('messageCreate', async message => {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
 
-  const [action, raid_name] = interaction.customId.split('_');
+  const [action, raid_id] = interaction.customId.split('_');
 
-  if (action === 'signup' && raid_schedule[raid_name]) {
-    if (!raid_schedule[raid_name].participants.includes(interaction.user.username)) {
-      raid_schedule[raid_name].participants.push(interaction.user.username);
+  const raid = raid_schedule.find(r => r.id === raid_id);
+
+  if (action === 'signup' && raid) {
+    if (!raid.participants.includes(interaction.user.username)) {
+      raid.participants.push(interaction.user.username);
       const raid_channel = interaction.guild.channels.cache.find(channel => channel.name === raid_channel_name && channel.type === 0);
-      await send_raid_info(raid_channel, raid_name, interaction.user.username);
+      await send_raid_info(raid_channel, interaction.user.username);
       await interaction.deferUpdate(); // Update the interaction without sending a response
     } else {
-      await interaction.reply({ content: `You have already signed up for "${raid_name}".`, ephemeral: true });
+      await interaction.reply({ content: `You have already signed up for raid ID ${raid_id}.`, ephemeral: true });
     }
-  } else if (action === 'cancel' && raid_schedule[raid_name]) {
-    const index = raid_schedule[raid_name].participants.indexOf(interaction.user.username);
+  } else if (action === 'cancel' && raid) {
+    const index = raid.participants.indexOf(interaction.user.username);
     if (index !== -1) {
-      raid_schedule[raid_name].participants.splice(index, 1);
+      raid.participants.splice(index, 1);
       const raid_channel = interaction.guild.channels.cache.find(channel => channel.name === raid_channel_name && channel.type === 0);
-      await send_raid_info(raid_channel, raid_name, interaction.user.username);
+      await send_raid_info(raid_channel, interaction.user.username);
       await interaction.deferUpdate(); // Update the interaction without sending a response
     } else {
-      await interaction.reply({ content: `You are not signed up for "${raid_name}".`, ephemeral: true });
+      await interaction.reply({ content: `You are not signed up for raid ID ${raid_id}.`, ephemeral: true });
     }
   }
 });
 
-async function send_raid_info(channel, raid_name, username) {
+async function send_raid_info(channel, username) {
   await channel.bulkDelete(100, true); // Clear the channel
-  const details = raid_schedule[raid_name];
-  const status = details.participants.length >= raid_size ? '**Raid is full!**' : `**${raid_size - details.participants.length} more needed!**`;
-  const participants_list = details.participants.length ? details.participants.map((user, index) => `${index + 1}. ${user}`).join('\n') : 'No one has signed up yet.';
-  const time = details.time ? `🕒 **Time:** ${details.time}` : '';
-  const day = details.day ? `📅 **Day:** ${details.day}` : '';
-  const extra_info = details.extra_info ? `ℹ️ **Info:** ${details.extra_info}` : '';
-  const message = `**${raid_name}**\nParticipants (${details.participants.length}/${raid_size}):\n${participants_list}\n\n${time}\n${day}\n${extra_info}\n\n${status}`;
+  const sorted_raids = raid_schedule.sort((a, b) => {
+    const dateA = new Date(`${a.day} ${a.time}`);
+    const dateB = new Date(`${b.day} ${b.time}`);
+    return dateA - dateB;
+  });
 
-  const buttons = new ActionRowBuilder();
+  for (const raid of sorted_raids) {
+    const status = raid.participants.length >= raid_size ? '**Raid is full!**' : `**${raid_size - raid.participants.length} more needed!**`;
+    const participants_list = raid.participants.length ? raid.participants.map((user, index) => `${index + 1}. ${user}`).join('\n') : 'No one has signed up yet.';
+    const time = raid.time ? `🕒 **Time:** ${raid.time}` : '';
+    const day = raid.day ? `📅 **Day:** ${raid.day}` : '';
+    const extra_info = raid.extra_info ? `ℹ️ **Info:** ${raid.extra_info}` : '';
+    const message = `**${raid.name}**\nRaid ID: ${raid.id}\nParticipants (${raid.participants.length}/${raid_size}):\n${participants_list}\n\n${time}\n${day}\n${extra_info}\n\n${status}`;
 
-  if (username && details.participants.includes(username)) {
-    buttons.addComponents(
-      new ButtonBuilder()
-        .setCustomId(`cancel_${raid_name}`)
-        .setLabel('Cancel Sign Up')
-        .setStyle(ButtonStyle.Danger)
-    );
-  } else {
-    buttons.addComponents(
-      new ButtonBuilder()
-        .setCustomId(`signup_${raid_name}`)
-        .setLabel('Sign Up')
-        .setStyle(ButtonStyle.Primary)
-    );
+    const buttons = new ActionRowBuilder();
+
+    if (username && raid.participants.includes(username)) {
+      buttons.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`cancel_${raid.id}`)
+          .setLabel('Cancel Sign Up')
+          .setStyle(ButtonStyle.Danger)
+      );
+    } else {
+      buttons.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`signup_${raid.id}`)
+          .setLabel('Sign Up')
+          .setStyle(ButtonStyle.Primary)
+      );
+    }
+
+    await channel.send({ content: message, components: [buttons] });
   }
-
-  await channel.send({ content: message, components: [buttons] });
 }
 
 async function updatePinnedMessage(channel) {
