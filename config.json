@@ -1,0 +1,27 @@
+{
+    "prefix": "!",
+    "raid_channel_name": "raids",
+    "command_channel_name": "raid-commands",
+    "raid_size": 6,
+    "possible_raids": {
+        "Vault of Glass": ["vog", "vaultofglass", "vault"],
+        "Crota's End": ["ce", "crota", "crotasend", "crota'send", "crotaend"],
+        "King's Fall": ["kf", "kingsfall", "kings", "king'sfall"],
+        "Root of Nightmares": ["ron", "rootofnightmares", "root"],
+        "Vow of the Disciple": ["vow", "vowofthedisciple"],
+        "Deep Stone Crypt": ["dsc", "deepstonecrypt", "deepstone"],
+        "Last Wish": ["lw", "lastwish"],
+        "Garden of Salvation": ["gos", "gardenofsalvation", "garden", "div", "divrun"],
+        "Salvation's Edge": ["se", "salvationsedge", "salvation"]
+      },
+      "commands": {
+        "schedule": "Schedules a new raid. Usage: !schedule <raid_name>",
+        "settime": "Sets the time for a raid. Usage: !settime <raid_name> <time>",
+        "setday": "Sets the day for a raid. Usage: !setday <raid_name> <day>",
+        "setinfo": "Adds additional info for a raid. Usage: !setinfo <raid_name> <info>",
+        "signup": "Signs up for a scheduled raid. Usage: !signup <raid_name>",
+        "cancel": "Cancels your sign-up for a raid. Usage: !cancel <raid_name>",
+        "cancelraid": "Cancels a scheduled raid. Usage: !cancelraid <raid_name>"
+      }
+  }
+  
