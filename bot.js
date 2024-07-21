@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 require('dotenv').config(); // Load environment variables from .env file
@@ -13,7 +13,8 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMessageReactions
+    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.GuildMembers
   ]
 });
 
@@ -142,20 +143,20 @@ client.on('interactionCreate', async interaction => {
   const raid = raid_schedule.find(r => r.id === raid_id);
 
   if (action === 'signup' && raid) {
-    if (!raid.participants.includes(interaction.user.username)) {
-      raid.participants.push(interaction.user.username);
+    if (!raid.participants.includes(interaction.user.id)) {
+      raid.participants.push(interaction.user.id);
       const raid_channel = interaction.guild.channels.cache.find(channel => channel.name === raid_channel_name && channel.type === 0);
-      await send_raid_info(raid_channel, interaction.user.username);
+      await send_raid_info(raid_channel, interaction.user);
       await interaction.deferUpdate(); // Update the interaction without sending a response
     } else {
       await interaction.reply({ content: `You have already signed up for raid ID ${raid_id}.`, ephemeral: true });
     }
   } else if (action === 'cancel' && raid) {
-    const index = raid.participants.indexOf(interaction.user.username);
+    const index = raid.participants.indexOf(interaction.user.id);
     if (index !== -1) {
       raid.participants.splice(index, 1);
       const raid_channel = interaction.guild.channels.cache.find(channel => channel.name === raid_channel_name && channel.type === 0);
-      await send_raid_info(raid_channel, interaction.user.username);
+      await send_raid_info(raid_channel, interaction.user);
       await interaction.deferUpdate(); // Update the interaction without sending a response
     } else {
       await interaction.reply({ content: `You are not signed up for raid ID ${raid_id}.`, ephemeral: true });
@@ -163,7 +164,7 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-async function send_raid_info(channel, username) {
+async function send_raid_info(channel, user) {
   await channel.bulkDelete(100, true); // Clear the channel
   const sorted_raids = raid_schedule.sort((a, b) => {
     const dateA = new Date(`${a.day} ${a.time}`);
@@ -173,15 +174,25 @@ async function send_raid_info(channel, username) {
 
   for (const raid of sorted_raids) {
     const status = raid.participants.length >= raid_size ? '**Raid is full!**' : `**${raid_size - raid.participants.length} more needed!**`;
-    const participants_list = raid.participants.length ? raid.participants.map((user, index) => `${index + 1}. ${user}`).join('\n') : 'No one has signed up yet.';
+
+    const participant_embeds = await Promise.all(raid.participants.map(async userId => {
+      const user = await client.users.fetch(userId);
+      return new EmbedBuilder()
+        .setAuthor({ name: user.tag, iconURL: user.displayAvatarURL({ dynamic: true }) })
+        .setColor(0x00AE86);
+    }));
+
     const time = raid.time ? `🕒 **Time:** ${raid.time}` : '';
     const day = raid.day ? `📅 **Day:** ${raid.day}` : '';
     const extra_info = raid.extra_info ? `ℹ️ **Info:** ${raid.extra_info}` : '';
-    const message = `**${raid.name}**\nRaid ID: ${raid.id}\nParticipants (${raid.participants.length}/${raid_size}):\n${participants_list}\n\n${time}\n${day}\n${extra_info}\n\n${status}`;
+    const raid_message = new EmbedBuilder()
+      .setTitle(`${raid.name}`)
+      .setDescription(`**Raid ID:** ${raid.id}\n\n${time}\n${day}\n${extra_info}\n\n${status}`)
+      .setColor(0x00AE86);
 
     const buttons = new ActionRowBuilder();
 
-    if (username && raid.participants.includes(username)) {
+    if (user && raid.participants.includes(user.id)) {
       buttons.addComponents(
         new ButtonBuilder()
           .setCustomId(`cancel_${raid.id}`)
@@ -197,7 +208,7 @@ async function send_raid_info(channel, username) {
       );
     }
 
-    await channel.send({ content: message, components: [buttons] });
+    await channel.send({ embeds: [raid_message, ...participant_embeds], components: [buttons] });
   }
 }
 
