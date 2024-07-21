@@ -2,6 +2,7 @@ const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle,
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 require('dotenv').config(); // Load environment variables from .env file
+const moment = require('moment-timezone'); // Add moment-timezone package
 
 // Read and parse the configuration file
 const config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
@@ -168,7 +169,7 @@ client.on('interactionCreate', async interaction => {
 
     const input = new TextInputBuilder()
       .setCustomId('input')
-      .setLabel(`Enter ${action === 'settime' ? 'Time' : action === 'setday' ? 'Day' : 'Info'}`)
+      .setLabel(`Enter ${action === 'settime' ? 'Time (HH:mm TZ)' : action === 'setday' ? 'Day (YYYY-MM-DD)' : 'Info'}`)
       .setStyle(TextInputStyle.Short);
 
     modal.addComponents(new ActionRowBuilder().addComponents(input));
@@ -185,8 +186,16 @@ client.on('interactionCreate', async interaction => {
 
   if (raid) {
     if (action === 'settime') {
+      if (!moment(input, 'HH:mm Z', true).isValid()) {
+        await interaction.reply({ content: `Invalid time format. Please enter time as HH:mm TZ (e.g., 18:00 -0500).`, ephemeral: true });
+        return;
+      }
       raid.time = input;
     } else if (action === 'setday') {
+      if (!moment(input, 'YYYY-MM-DD', true).isValid()) {
+        await interaction.reply({ content: `Invalid date format. Please enter date as YYYY-MM-DD.`, ephemeral: true });
+        return;
+      }
       raid.day = input;
     } else if (action === 'setinfo') {
       raid.extra_info = input;
@@ -217,12 +226,12 @@ async function send_raid_info(channel, user) {
         .setColor(0x00AE86);
     }));
 
-    const time = raid.time ? `🕒 **Time:** ${raid.time}` : '';
+    const time = raid.time ? convertTimezones(raid.time) : '';
     const day = raid.day ? `📅 **Day:** ${raid.day}` : '';
     const extra_info = raid.extra_info ? `ℹ️ **Info:** ${raid.extra_info}` : '';
     const raid_message = new EmbedBuilder()
       .setTitle(`${raid.name}`)
-      .setDescription(`**Raid ID:** ${raid.id}\n\n${time}\n${day}\n${extra_info}\n\n${status}`)
+      .setDescription(`**Raid ID:** ${raid.id}\n\n${time}\n\n${day}\n\n${extra_info}\n\n${status}`)
       .setColor(0x00AE86);
 
     const buttons = new ActionRowBuilder();
@@ -259,7 +268,17 @@ async function send_raid_info(channel, user) {
     );
 
     await channel.send({ embeds: [raid_message, ...participant_embeds], components: [buttons] });
+    await channel.send({ content: '\u200B' }); // Add extra spacing between raid posts
   }
+}
+
+function convertTimezones(time) {
+  const zones = ['America/Chicago', 'America/Denver', 'America/New_York'];
+  const formattedTimes = zones.map(zone => {
+    const formattedTime = moment.tz(time, 'HH:mm Z', zone).format('HH:mm z');
+    return `${formattedTime}`;
+  }).join(' / ');
+  return `🕒 **Time:** ${formattedTimes}`;
 }
 
 async function updatePinnedMessage(channel) {
