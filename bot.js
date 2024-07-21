@@ -7,8 +7,6 @@ const moment = require('moment-timezone'); // Add moment-timezone package
 // Read and parse the configuration file
 const config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
 
-console.log('Config:', config); // Debugging line to print the config
-
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -22,9 +20,6 @@ const client = new Client({
 // Destructure the config object to get the configuration variables
 const { prefix, raid_channel_name, command_channel_name, raid_size, possible_raids, commands } = config;
 
-console.log('Raid Channel Name:', raid_channel_name); // Debugging line to check raid_channel_name
-console.log('Command Channel Name:', command_channel_name); // Debugging line to check command_channel_name
-
 let raid_schedule = [];
 
 client.on('ready', async () => {
@@ -35,13 +30,6 @@ client.on('ready', async () => {
   if (commandChannel) {
     await updatePinnedMessage(commandChannel);
   }
-
-  // List all channels for debugging
-  client.guilds.cache.forEach(guild => {
-    guild.channels.cache.forEach(channel => {
-      console.log(`Channel: ${channel.name}, Type: ${channel.type}`);
-    });
-  });
 });
 
 client.on('messageCreate', async message => {
@@ -61,11 +49,6 @@ client.on('messageCreate', async message => {
 
     const raid_channel = message.guild.channels.cache.find(channel => channel.name === raid_channel_name && channel.type === 0);
     const command_channel = message.guild.channels.cache.find(channel => channel.name === command_channel_name && channel.type === 0);
-
-    console.log(`Raid Channel: ${raid_channel ? raid_channel.name : 'Not Found'}`);
-    console.log(`Command Channel: ${command_channel ? command_channel.name : 'Not Found'}`);
-    console.log(`Current Channel: ${message.channel.name}`);
-    console.log(`Comparing: ${message.channel.name} === ${command_channel_name}`);
 
     if (!command_channel) {
       message.channel.send(`Please create a channel named #${command_channel_name} for commands.`);
@@ -95,7 +78,6 @@ client.on('messageCreate', async message => {
       const raid = raid_schedule.find(r => r.id === raid_id);
       if (raid) {
         raid.time = time;
-        message.channel.send(`Time for raid ID ${raid_id} set to ${time}.`);
         await send_raid_info(raid_channel, null);
       } else {
         message.channel.send(`Raid with ID ${raid_id} does not exist.`);
@@ -106,7 +88,6 @@ client.on('messageCreate', async message => {
       const raid = raid_schedule.find(r => r.id === raid_id);
       if (raid) {
         raid.day = day;
-        message.channel.send(`Day for raid ID ${raid_id} set to ${day}.`);
         await send_raid_info(raid_channel, null);
       } else {
         message.channel.send(`Raid with ID ${raid_id} does not exist.`);
@@ -117,7 +98,6 @@ client.on('messageCreate', async message => {
       const raid = raid_schedule.find(r => r.id === raid_id);
       if (raid) {
         raid.extra_info = extra_info;
-        message.channel.send(`Extra info for raid ID ${raid_id} set to: ${extra_info}.`);
         await send_raid_info(raid_channel, null);
       } else {
         message.channel.send(`Raid with ID ${raid_id} does not exist.`);
@@ -162,17 +142,41 @@ client.on('interactionCreate', async interaction => {
     } else {
       await interaction.reply({ content: `You are not signed up for raid ID ${raid_id}.`, ephemeral: true });
     }
-  } else if (['settime', 'setday', 'setinfo'].includes(action) && raid) {
+  } else if (action === 'settime' && raid) {
     const modal = new ModalBuilder()
-      .setCustomId(`${action}_${raid_id}`)
-      .setTitle(`Set ${action === 'settime' ? 'Time' : action === 'setday' ? 'Day' : 'Info'}`);
+      .setCustomId(`settime_${raid_id}`)
+      .setTitle(`Set Time`);
 
-    const input = new TextInputBuilder()
-      .setCustomId('input')
-      .setLabel(`Enter ${action === 'settime' ? 'Time (HH:mm TZ)' : action === 'setday' ? 'Day (YYYY-MM-DD)' : 'Info'}`)
+    const timeInput = new TextInputBuilder()
+      .setCustomId('time')
+      .setLabel('Enter Time (HH:mm or H:mm)')
       .setStyle(TextInputStyle.Short);
 
-    modal.addComponents(new ActionRowBuilder().addComponents(input));
+    modal.addComponents(new ActionRowBuilder().addComponents(timeInput));
+    await interaction.showModal(modal);
+  } else if (action === 'setday' && raid) {
+    const modal = new ModalBuilder()
+      .setCustomId(`setday_${raid_id}`)
+      .setTitle(`Set Day`);
+
+    const dateInput = new TextInputBuilder()
+      .setCustomId('date')
+      .setLabel('Enter Date (MM-DD or Month Day)')
+      .setStyle(TextInputStyle.Short);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(dateInput));
+    await interaction.showModal(modal);
+  } else if (action === 'setinfo' && raid) {
+    const modal = new ModalBuilder()
+      .setCustomId(`setinfo_${raid_id}`)
+      .setTitle(`Set Info`);
+
+    const infoInput = new TextInputBuilder()
+      .setCustomId('info')
+      .setLabel('Enter Info')
+      .setStyle(TextInputStyle.Paragraph);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(infoInput));
     await interaction.showModal(modal);
   }
 });
@@ -182,30 +186,50 @@ client.on('interactionCreate', async interaction => {
 
   const [action, raid_id] = interaction.customId.split('_');
   const raid = raid_schedule.find(r => r.id === raid_id);
-  const input = interaction.fields.getTextInputValue('input');
-
-  if (raid) {
-    if (action === 'settime') {
-      if (!moment(input, 'HH:mm Z', true).isValid()) {
-        await interaction.reply({ content: `Invalid time format. Please enter time as HH:mm TZ (e.g., 18:00 -0500).`, ephemeral: true });
-        return;
-      }
-      raid.time = input;
-    } else if (action === 'setday') {
-      if (!moment(input, 'YYYY-MM-DD', true).isValid()) {
-        await interaction.reply({ content: `Invalid date format. Please enter date as YYYY-MM-DD.`, ephemeral: true });
-        return;
-      }
-      raid.day = input;
-    } else if (action === 'setinfo') {
-      raid.extra_info = input;
-    }
-    const raid_channel = interaction.guild.channels.cache.find(channel => channel.name === raid_channel_name && channel.type === 0);
-    await send_raid_info(raid_channel, interaction.user);
-    await interaction.reply({ content: `${action === 'settime' ? 'Time' : action === 'setday' ? 'Day' : 'Info'} for raid ID ${raid_id} set to ${input}.`, ephemeral: true });
-  } else {
+  
+  if (!raid) {
     await interaction.reply({ content: `Raid with ID ${raid_id} does not exist.`, ephemeral: true });
+    return;
   }
+
+  if (action === 'settime') {
+    const time = interaction.fields.getTextInputValue('time');
+    const timeFormats = ['HH:mm', 'H:mm'];
+
+    if (!timeFormats.some(format => moment(time, format, true).isValid())) {
+      await interaction.reply({ content: `Invalid time format. Please enter time as HH:mm or H:mm (e.g., 18:00 or 6:00).`, ephemeral: true });
+      return;
+    }
+
+    const userTimezone = moment.tz.guess();
+    const timeInUserTimezone = moment.tz(time, timeFormats, userTimezone);
+    const convertedTimes = ['America/Chicago', 'America/Denver', 'America/New_York'].map(zone => {
+      return timeInUserTimezone.clone().tz(zone).format('HH:mm z');
+    }).join(' / ');
+
+    raid.time = `${time} ${userTimezone} (${convertedTimes})`;
+  } else if (action === 'setday') {
+    const day = interaction.fields.getTextInputValue('date');
+    const currentYear = new Date().getFullYear();
+
+    const dateFormats = ['MM-DD', 'MMMM D'];
+
+    const parsedDate = moment(day, dateFormats, true);
+    const parsedMonthNameDate = moment(day, ['MMMM D'], true);
+
+    if (!parsedDate.isValid() && !parsedMonthNameDate.isValid()) {
+      await interaction.reply({ content: `Invalid date format. Please enter date as MM-DD or Month Day.`, ephemeral: true });
+      return;
+    }
+
+    raid.day = parsedDate.isValid() ? parsedDate.format('YYYY-MM-DD') : parsedMonthNameDate.format('YYYY-MM-DD');
+  } else if (action === 'setinfo') {
+    raid.extra_info = interaction.fields.getTextInputValue('info');
+  }
+
+  const raid_channel = interaction.guild.channels.cache.find(channel => channel.name === raid_channel_name && channel.type === 0);
+  await send_raid_info(raid_channel, interaction.user);
+  await interaction.deferUpdate(); // Update the interaction without sending a response
 });
 
 async function send_raid_info(channel, user) {
@@ -215,6 +239,8 @@ async function send_raid_info(channel, user) {
     const dateB = new Date(`${b.day} ${b.time}`);
     return dateA - dateB;
   });
+
+  const raid_icon_url = 'https://yourserver.com/icons/raid.svg'; // Replace with the actual URL to your raid icon
 
   for (const raid of sorted_raids) {
     const status = raid.participants.length >= raid_size ? '**Raid is full!**' : `**${raid_size - raid.participants.length} more needed!**`;
@@ -226,13 +252,15 @@ async function send_raid_info(channel, user) {
         .setColor(0x00AE86);
     }));
 
-    const time = raid.time ? convertTimezones(raid.time) : '';
-    const day = raid.day ? `📅 **Day:** ${raid.day}` : '';
-    const extra_info = raid.extra_info ? `ℹ️ **Info:** ${raid.extra_info}` : '';
+    const time = raid.time ? `🕒 **Time:** ${raid.time}` : '🕒 **Time:**';
+    const day = raid.day ? `📅 **Day:** ${moment(raid.day).format('MMMM D')}` : '📅 **Day:**';
+    const extra_info = raid.extra_info ? `ℹ️ **Info:** ${raid.extra_info}` : 'ℹ️ **Info:**';
     const raid_message = new EmbedBuilder()
       .setTitle(`${raid.name}`)
-      .setDescription(`**Raid ID:** ${raid.id}\n\n${time}\n\n${day}\n\n${extra_info}\n\n${status}`)
-      .setColor(0x00AE86);
+      .setThumbnail(raid_icon_url)
+      .setDescription(`${time}\n\n${day}\n\n${extra_info}\n\n${status}`)
+      .setColor(0x00AE86)
+      .setFooter({ text: '\u200B'.repeat(100) }); // Add filler text to span width
 
     const buttons = new ActionRowBuilder();
 
@@ -270,15 +298,6 @@ async function send_raid_info(channel, user) {
     await channel.send({ embeds: [raid_message, ...participant_embeds], components: [buttons] });
     await channel.send({ content: '\u200B' }); // Add extra spacing between raid posts
   }
-}
-
-function convertTimezones(time) {
-  const zones = ['America/Chicago', 'America/Denver', 'America/New_York'];
-  const formattedTimes = zones.map(zone => {
-    const formattedTime = moment.tz(time, 'HH:mm Z', zone).format('HH:mm z');
-    return `${formattedTime}`;
-  }).join(' / ');
-  return `🕒 **Time:** ${formattedTimes}`;
 }
 
 async function updatePinnedMessage(channel) {
