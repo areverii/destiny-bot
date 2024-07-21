@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 require('dotenv').config(); // Load environment variables from .env file
@@ -161,6 +161,41 @@ client.on('interactionCreate', async interaction => {
     } else {
       await interaction.reply({ content: `You are not signed up for raid ID ${raid_id}.`, ephemeral: true });
     }
+  } else if (['settime', 'setday', 'setinfo'].includes(action) && raid) {
+    const modal = new ModalBuilder()
+      .setCustomId(`${action}_${raid_id}`)
+      .setTitle(`Set ${action === 'settime' ? 'Time' : action === 'setday' ? 'Day' : 'Info'}`);
+
+    const input = new TextInputBuilder()
+      .setCustomId('input')
+      .setLabel(`Enter ${action === 'settime' ? 'Time' : action === 'setday' ? 'Day' : 'Info'}`)
+      .setStyle(TextInputStyle.Short);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(input));
+    await interaction.showModal(modal);
+  }
+});
+
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isModalSubmit()) return;
+
+  const [action, raid_id] = interaction.customId.split('_');
+  const raid = raid_schedule.find(r => r.id === raid_id);
+  const input = interaction.fields.getTextInputValue('input');
+
+  if (raid) {
+    if (action === 'settime') {
+      raid.time = input;
+    } else if (action === 'setday') {
+      raid.day = input;
+    } else if (action === 'setinfo') {
+      raid.extra_info = input;
+    }
+    const raid_channel = interaction.guild.channels.cache.find(channel => channel.name === raid_channel_name && channel.type === 0);
+    await send_raid_info(raid_channel, interaction.user);
+    await interaction.reply({ content: `${action === 'settime' ? 'Time' : action === 'setday' ? 'Day' : 'Info'} for raid ID ${raid_id} set to ${input}.`, ephemeral: true });
+  } else {
+    await interaction.reply({ content: `Raid with ID ${raid_id} does not exist.`, ephemeral: true });
   }
 });
 
@@ -207,6 +242,21 @@ async function send_raid_info(channel, user) {
           .setStyle(ButtonStyle.Primary)
       );
     }
+
+    buttons.addComponents(
+      new ButtonBuilder()
+        .setCustomId(`settime_${raid.id}`)
+        .setLabel('Set Time')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`setday_${raid.id}`)
+        .setLabel('Set Day')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`setinfo_${raid.id}`)
+        .setLabel('Set Info')
+        .setStyle(ButtonStyle.Secondary)
+    );
 
     await channel.send({ embeds: [raid_message, ...participant_embeds], components: [buttons] });
   }
